@@ -1,4 +1,5 @@
 venv
+__pycache
 test1.py
 testik.py
 pythonserver.py

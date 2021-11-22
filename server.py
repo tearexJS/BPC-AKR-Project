@@ -15,11 +15,11 @@ import struct
 import json
 from dataclasses import dataclass
 
-HOST = "1270.0.0.1"
-PORT = 9999
+HOST = "localhost"
+PORT = 65000
 DATA_SIZE = 1024
 FILE_PATH = "files/"
-BLOCK_SIZE = 10
+BLOCK_SIZE = 20
 
 
 @dataclass
@@ -46,7 +46,7 @@ def createBlock(video_q, audio_q):
     video_list = bytearray()
     while video_q.qsize() and audio_q.qsize():
         
-        for i in range(10):
+        for i in range(BLOCK_SIZE):
             if i > video_q.qsize():
                 break
             video_list.extend(video_q.get())
@@ -81,11 +81,11 @@ def audio_stream(frame_count):
     return audio
 
 
-files = ["meme.mp4"]
+files = ["meme4.mp4"]
 filename = ""
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
+print(type(server_socket))
 server_socket.bind((HOST, PORT))
 server_socket.listen()
 
@@ -120,21 +120,27 @@ with conn:
             break
         data = json.loads(data.decode("utf-8"))
         if data["type"] == "fileListReq":
-            conn.sendall(bytes(json.dumps(files), "utf-8"))
+            conn.sendall(bytes(json.dumps({'files':files}), "utf-8"))
         elif data["type"] == "fileReq":
-            if(int(data["fileID"]) ==1):
+            if(int(data["fileID"]) == 0):
                 filename = FILE_PATH+files[0]
-                video = cv2.VideoCapture("files/meme.mp4")
+                video = cv2.VideoCapture("files/meme3.mp4")
+                extract_sound("files/meme3.mp4")
                 FPS = int(video.get(cv2.CAP_PROP_FPS))
                 frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
                 video_q = video_stream_gen(video)
                 audio_q = audio_stream(frame_count)
                 createBlock(video_q, audio_q)
+                video_packet: bytes
+                audio_packet: bytes
                 while block_q.qsize():
-                    if block_q.qsize() != 1:
-                        video_packet, audio_packet = generatePacket(FPS, False)
-                    else:
+                    if block_q.qsize() == 1:
+                        print("TERMINATOOOOOR")
                         video_packet, audio_packet = generatePacket(FPS, True)
-                        
-                    conn.sendall(video_packet)
-                    conn.sendall(audio_packet)
+                    else:
+                        video_packet, audio_packet = generatePacket(FPS, False)
+                    conn.send(video_packet)
+                    print("TAM")
+                    conn.send(audio_packet)
+                    print("TU")
+                    print(len(audio_packet), len(video_packet))

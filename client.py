@@ -19,39 +19,80 @@ import struct
 
 DATA_SIZE = 1024
 HOST = '127.0.0.1'
-PORT = 9999
+PORT = 65000
 
-
-def stream_audio(audioFrames, terminate):
+audio_q = queue.Queue()
+video_q = queue.Queue()
+frames_q = queue.Queue()
+terminate = False
+FPS = 0
+def stream_audio():
 
     p = pyaudio.PyAudio()
     CHUNK = 1024
     stream = p.open(format=p.get_format_from_width(2),
                     channels=2,
-                    rate=44100,
+                    rate=44000,
                     output=True,
                     frames_per_buffer=CHUNK)
-    while not audioFrames:
-        pass
-    while not terminate:
-        stream.write(audioFrames)
-    sys.exit()
+    while True:
+        if(audio_q.qsize()):
+            data = bytes(audio_q.get())
+            if len(data):
+                stream.write(data)
+    
 
+    #sys.exit()
 
-def stream_video(videoFrames, FPS, terminate):
-    displayTime = 1/FPS
+def getFrames():
     begin = 0
-    while not videoFrames:
-        pass
-    while not terminate:
-        for i in range(begin, len(videoFrames)):
-            if(videoFrames[i] == 0xFF and videoFrames[i+1] == 0xD9):
-                arr1 = videoFrames[begin:i+2]
-                begin = i+2
-                frame = cv2.imdecode(arr1, 1)
-                cv2.imshow(frame)
-                cv2.waitKey(int(displayTime*1000))
+    while True:
+        if video_q.qsize():
+            blockOfFrames = video_q.get()
+            for i in range(len(blockOfFrames)):
+                if blockOfFrames[i]==0xFF and blockOfFrames[i+1] == 0xD9:
+                    frame = blockOfFrames[begin:i+2]
+                    if len(frame):
+                        frames_q.put(frame)
+                    begin = i+2        
 
+def stream_video():
+    cv2.namedWindow('nigga')   
+    while True:
+        if FPS > 0:
+            displayTime = 1/FPS
+        if(frames_q.qsize()):
+            startTime = 0
+            while frames_q.qsize():
+                frame = np.asarray(frames_q.get(), dtype="uint8")
+                frame = cv2.imdecode(frame, 1)
+                deltaTime = time.time() - (startTime if startTime else time.time())
+                #print(deltaTime, displayTime-deltaTime)
+                time.sleep(displayTime-deltaTime if displayTime-deltaTime > 0 else 0)
+                startTime = time.time()
+                cv2.imshow("nigga",frame)
+                if cv2.waitKey(5) & 0xff == ord('q'):
+                    break
+               
+        
+            
+            
+
+
+def receiveBlockPart(client_socket, length):
+        blockFrames = bytearray()
+        while len(blockFrames)+DATA_SIZE < length:
+            # data = client_socket.recv(DATA_SIZE) TODO: fix size
+            data = client_socket.recv(DATA_SIZE)
+            if not data:
+                break
+            # print("TU")
+            blockFrames.extend(data)
+            
+        data = client_socket.recv(length - len(blockFrames))
+        blockFrames.extend(data)
+        
+        return blockFrames
 
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -75,39 +116,33 @@ selectedFileId = input("Select file to stream")
 # Request selected file from server
 client_socket.sendall(
     bytes(json.dumps({'type': 'fileReq', 'fileID': selectedFileId}), 'utf-8'))
-isNotLast = True
-terminate = False
-FPS = None
-videoFrames = bytearray()
-audioFrames = bytearray()
+isLast = False
+
 video_thread = threading.Thread(
-    target=stream_video, args=(videoFrames, FPS, terminate))
+    target=stream_video, args=())
 audio_thread = threading.Thread(
-    target=stream_audio, args=(audioFrames, terminate))
+    target=stream_audio, args=())
+video_parse_thread = threading.Thread(target=getFrames, args=())
+
+video_parse_thread.start()
 video_thread.start()
 audio_thread.start()
-while isNotLast:
+
+while not isLast:
     args = client_socket.recv(9)
     args = struct.unpack(">?II", args)
-    isNotLast = args[0]
-    length = args[1]
+    isLast = args[0]
+    lengthVideo = args[1]
     FPS = args[2]
-
-    while len(videoFrames) < length:
-        data = client_socket.recv(DATA_SIZE)
-        if not data:
-            break
-        videoFrames.extend(data)
-
+    #print("isLast, videoLength from server, FPS from server", isLast, lengthVideo, FPS)
+    video_q.put(receiveBlockPart(client_socket, lengthVideo))
+    #print("videoFrames size: ", len(videoFrames))
     args = client_socket.recv(5)
-
     args = struct.unpack(">?I", args)
-    isNotLast = args[0]
-    length = args[1]
-
-    while len(audioFrames) < length:
-        data = client_socket.recv(DATA_SIZE)
-        if not data:
-            break
-        audioFrames.extend(data)
+    isLast = args[0]
+    lengthAudio = args[1]
+    #print("AUDIO: isLast, audioLength from server: ", isLast, lengthAudio)
+    audio_q.put(receiveBlockPart(client_socket, lengthAudio))
+    #print("AudioFrames: ", len(audioFrames))
+    
 terminate = True

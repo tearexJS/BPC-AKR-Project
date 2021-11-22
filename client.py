@@ -1,95 +1,113 @@
 
-import cv2, imutils, socket
+import queue
+import cv2
+import imutils
+import socket
 import numpy as np
-import time, os
+import time
+import os
+import sys
 import base64
-import threading, pyaudio,pickle,struct
-
-
-BUFF_SIZE = 65536
-
-BREAK = False
-client_socket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-client_socket.setsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF,BUFF_SIZE)
-host_name = socket.gethostname()
-host_ip = '127.0.0.1'#  socket.gethostbyname(host_name)
-port = 9695
+import json
+import threading
+import pyaudio
+import pickle
+import struct
 
 
 
 
+DATA_SIZE = 1024
+HOST = '127.0.0.1'
+PORT = 9999
 
 
-def audio_stream():
-	
-	p = pyaudio.PyAudio()
-	CHUNK = 1024
-	stream = p.open(format=p.get_format_from_width(2),
-					channels=2,
-					rate=44100,
-					output=True,
-					frames_per_buffer=CHUNK)
-					
-	# create socket
-	client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-	socket_address = (host_ip,port-1)
-	print('server listening at',socket_address)
-	client_socket.connect(socket_address) 
-	print("CLIENT CONNECTED TO",socket_address)
-	data = b""
-	payload_size = struct.calcsize("Q")
-	while True:
-		try:
-			while len(data) < payload_size:
-				packet = client_socket.recv(4*1024) # 4K
-				if not packet: break
-				data+=packet
-			packed_msg_size = data[:payload_size]
-			data = data[payload_size:]
-			msg_size = struct.unpack("Q",packed_msg_size)[0]
-			while len(data) < msg_size:
-				data += client_socket.recv(4*1024)
-			frame_data = data[:msg_size]
-			data  = data[msg_size:]
-			frame = pickle.loads(frame_data)
-			stream.write(frame)
+def stream_audio(audioFrames, terminate):
 
-		except:
-			
-			break
-
-	client_socket.close()
-	print('Audio closed',BREAK)
-	os._exit(1)
-	
+    p = pyaudio.PyAudio()
+    CHUNK = 1024
+    stream = p.open(format=p.get_format_from_width(2),
+                    channels=2,
+                    rate=44100,
+                    output=True,
+                    frames_per_buffer=CHUNK)
+    while not audioFrames:
+        pass
+    while not terminate:
+        stream.write(audioFrames)
+    sys.exit()
 
 
-t1 = threading.Thread(target=audio_stream, args=())
-t1.start()
+def stream_video(videoFrames, FPS, terminate):
+    displayTime = 1/FPS
+    begin = 0
+    while not videoFrames:
+        pass
+    while not terminate:
+        for i in range(begin, len(videoFrames)):
+            if(videoFrames[i] == 0xFF and videoFrames[i+1] == 0xD9):
+                arr1 = videoFrames[begin:i+2]
+                begin = i+2
+                frame = cv2.imdecode(arr1, 1)
+                cv2.imshow(frame)
+                cv2.waitKey(int(displayTime*1000))
 
-cv2.namedWindow('RECEIVING VIDEO')        
-cv2.moveWindow('RECEIVING VIDEO', 10,360) 
-fps,st,frames_to_count,cnt = (0,0,20,0)
-#TS = client_socket.recvfrom(BUFF_SIZE)
-while True:
-	packet,_ = client_socket.recvfrom(BUFF_SIZE)
-	data = base64.b64decode(packet,' /')
-	npdata = np.fromstring(data,dtype=np.uint8)
 
-	frame = cv2.imdecode(npdata,1)
-	frame = cv2.putText(frame,'FPS: '+str(fps),(10,40),cv2.FONT_HERSHEY_SIMPLEX,0.7,(0,0,255),2)
-	cv2.imshow("RECEIVING VIDEO",frame)
-	key = cv2.waitKey(1) & 0xFF
-	
-	if key == ord('q'):
-		client_socket.close()
-		os._exit(1)
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-	if cnt == frames_to_count:
-		try:
-			fps = round(frames_to_count/(time.time()-st),1)
-			st=time.time()
-			cnt=0
-		except:
-			pass
-	cnt+=1
+client_socket.connect((HOST, PORT))
+
+jsonReq = {'type': 'fileListReq'}
+client_socket.sendall(bytes(json.dumps(jsonReq), 'utf-8'))
+data = client_socket.recv(DATA_SIZE)
+
+if not data:
+    os._exit(1)
+
+data = json.loads(data.decode("utf-8"))
+# Select file
+for i, file in enumerate(data['files']):
+    print(i, ": ", file)
+
+selectedFileId = input("Select file to stream")
+
+# Request selected file from server
+client_socket.sendall(
+    bytes(json.dumps({'type': 'fileReq', 'fileID': selectedFileId}), 'utf-8'))
+isNotLast = True
+terminate = False
+FPS = None
+videoFrames = bytearray()
+audioFrames = bytearray()
+video_thread = threading.Thread(
+    target=stream_video, args=(videoFrames, FPS, terminate))
+audio_thread = threading.Thread(
+    target=stream_audio, args=(audioFrames, terminate))
+video_thread.start()
+audio_thread.start()
+while isNotLast:
+    args = client_socket.recv(9)
+    args = struct.unpack(">?II", args)
+    isNotLast = args[0]
+    length = args[1]
+    FPS = args[2]
+
+    while len(videoFrames) < length:
+        data = client_socket.recv(DATA_SIZE)
+        if not data:
+            break
+        videoFrames.extend(data)
+
+    args = client_socket.recv(5)
+
+    args = struct.unpack(">?I", args)
+    isNotLast = args[0]
+    length = args[1]
+
+    while len(audioFrames) < length:
+        data = client_socket.recv(DATA_SIZE)
+        if not data:
+            break
+        audioFrames.extend(data)
+terminate = True

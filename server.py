@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 
 HOST = "1270.0.0.1"
-PORT = 6555
+PORT = 9999
 DATA_SIZE = 1024
 FILE_PATH = "files/"
 BLOCK_SIZE = 10
@@ -36,10 +36,10 @@ def extract_sound(filename):
         filename, 'files/temp.wav')
     os.system(command)
 
-def generatePacket(FPS):
+def generatePacket(FPS, isLast):
     block = block_q.get()
-    video_packet = struct.pack(">II", len(block.video), FPS) + block.video
-    audio_packet = struct.pack(">I", len(block.audio)) + block.audio
+    video_packet = struct.pack(">?II", isLast, len(block.video), FPS) + block.video
+    audio_packet = struct.pack(">?I", isLast,len(block.audio)) + block.audio
     return video_packet, audio_packet
 
 def createBlock(video_q, audio_q):
@@ -56,7 +56,6 @@ def createBlock(video_q, audio_q):
 
 def video_stream_gen(vid):
 
-    WIDTH = 400
     video = queue.Queue()
     while vid.isOpened():
         isNotEmpty, frame = vid.read()
@@ -65,7 +64,6 @@ def video_stream_gen(vid):
         _,frame = cv2.imencode('.jpeg',frame,[cv2.IMWRITE_JPEG_QUALITY,80])
         video.put(bytes(frame))
     print('Player closed')
-    BREAK = True
     vid.release()
     return video
 
@@ -82,35 +80,61 @@ def audio_stream(frame_count):
     os.remove("files/temp.wav")
     return audio
 
-def main():
-    files = ["meme.mp4"]
-    filename = ""
-    server_socket = socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((HOST, PORT))
-    server_socket.listen()
 
-    conn, addr = server_socket.accept()
-    with conn:
-        print("Connected by", addr)
-        while True:
-            data = conn.recv(DATA_SIZE)
-            if not data:
-                break
-            data = json.loads(data.decode("utf-8"))
-            if data["type"] == "fileListReq":
-                conn.sendall(bytes(json.dumps(files), "utf-8"))
-            elif data["type"] == "fileReq":
-                if(int(data["fileID"]) ==1):
-                    filename = FILE_PATH+files[0]
-                    video = cv2.VideoCapture("files/meme.mp4")
-                    FPS = int(video.get(cv2.CAP_PROP_FPS))
-                    frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-                    video_q = video_stream_gen(video)
-                    audio_q = audio_stream(frame_count)
-                    createBlock(video_q, audio_q)
-                    video_packet, audio_packet = generatePacket()
+files = ["meme.mp4"]
+filename = ""
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+server_socket.bind((HOST, PORT))
+server_socket.listen()
+
+# video = cv2.VideoCapture("files/meme.mp4")
+# extract_sound("files/meme.mp4")
+# FPS = int(video.get(cv2.CAP_PROP_FPS))
+# frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+# video_q = video_stream_gen(video)
+
+# audio_q = audio_stream(frame_count)
+
+# createBlock(video_q, audio_q)
+
+# arr = bytearray()
+# for job in block_q.queue:
+#     arr.extend(job.video)
+# begin = 0
+# for i in range(len(arr)):
+#     if(arr[i] == 0xFF and arr[i+1] == 0xD9):
+#         arr1 = arr[begin:i+2]
+#         begin = i+2
+#         Image = image.open(io.BytesIO(arr1))
+#         print(arr1)
+#         Image.show()
+
+conn, addr = server_socket.accept()
+with conn:
+    print("Connected by", addr)
+    while True:
+        data = conn.recv(DATA_SIZE)
+        if not data:
+            break
+        data = json.loads(data.decode("utf-8"))
+        if data["type"] == "fileListReq":
+            conn.sendall(bytes(json.dumps(files), "utf-8"))
+        elif data["type"] == "fileReq":
+            if(int(data["fileID"]) ==1):
+                filename = FILE_PATH+files[0]
+                video = cv2.VideoCapture("files/meme.mp4")
+                FPS = int(video.get(cv2.CAP_PROP_FPS))
+                frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+                video_q = video_stream_gen(video)
+                audio_q = audio_stream(frame_count)
+                createBlock(video_q, audio_q)
+                while block_q.qsize():
+                    if block_q.qsize() != 1:
+                        video_packet, audio_packet = generatePacket(FPS, False)
+                    else:
+                        video_packet, audio_packet = generatePacket(FPS, True)
+                        
                     conn.sendall(video_packet)
                     conn.sendall(audio_packet)
-                    
-if __name__ == "main":
-    main()

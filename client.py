@@ -53,6 +53,8 @@ def getFrames():
                 if blockOfFrames[i]==0xFF and blockOfFrames[i+1] == 0xD9:
                     frame = blockOfFrames[begin:i+2]
                     if len(frame):
+                        frame = np.asarray(frame, dtype="uint8")
+                        frame = cv2.imdecode(frame, 1)
                         frames_q.put(frame)
                     begin = i+2        
 
@@ -63,22 +65,31 @@ def stream_video():
             displayTime = 1/FPS
         if(frames_q.qsize()):
             startTime = 0
+            #fps,st,frames_to_count,cnt = (0,0,1,0)
             while frames_q.qsize():
-                frame = np.asarray(frames_q.get(), dtype="uint8")
-                frame = cv2.imdecode(frame, 1)
                 deltaTime = time.time() - (startTime if startTime else time.time())
-                #print(deltaTime, displayTime-deltaTime)
+                print(deltaTime, displayTime-deltaTime)
                 time.sleep(displayTime-deltaTime if displayTime-deltaTime > 0 else 0)
+                
+                # if cnt == frames_to_count:
+                #     fps = (frames_to_count/(time.time()-st))
+                #     st=time.time()
+                #     cnt=0
+                #     if fps>FPS:
+                #         displayTime+=0.0015
+                #     elif fps<FPS:
+                #         displayTime-=0.0015
+                #     else:
+                #         pass
+                # cnt += 1
+          
+                cv2.imshow("nigga",frames_q.get())
                 startTime = time.time()
-                cv2.imshow("nigga",frame)
-                if cv2.waitKey(5) & 0xff == ord('q'):
-                    break
-               
-        
-            
-            
-
-
+                if cv2.waitKey(1) & 0xff == ord('q'):
+                        break
+                
+                
+                
 def receiveBlockPart(client_socket, length):
         blockFrames = bytearray()
         while len(blockFrames)+DATA_SIZE < length:

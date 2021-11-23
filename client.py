@@ -13,7 +13,7 @@ import threading
 import pyaudio
 import pickle
 import struct
-
+import pgi
 
 
 
@@ -27,12 +27,11 @@ frames_q = queue.Queue()
 terminate = False
 FPS = 0
 def stream_audio():
-
     p = pyaudio.PyAudio()
     CHUNK = 1024
     stream = p.open(format=p.get_format_from_width(2),
                     channels=2,
-                    rate=44000,
+                    rate=44100,
                     output=True,
                     frames_per_buffer=CHUNK)
     while True:
@@ -45,59 +44,56 @@ def stream_audio():
     #sys.exit()
 
 def getFrames():
-    begin = 0
     while True:
         if video_q.qsize():
             blockOfFrames = video_q.get()
+            frameSum = 0
+            begin = 0
             for i in range(len(blockOfFrames)):
                 if blockOfFrames[i]==0xFF and blockOfFrames[i+1] == 0xD9:
-                    frame = blockOfFrames[begin:i+2]
-                    if len(frame):
-                        frame = np.asarray(frame, dtype="uint8")
-                        frame = cv2.imdecode(frame, 1)
-                        frames_q.put(frame)
-                    begin = i+2        
+                    end = (i + 2) if i < len(blockOfFrames) - 2 else len(blockOfFrames)
+                    frame = blockOfFrames[begin: end]
+                    frameSum += len(frame)
+                    frame = np.asarray(frame, dtype="uint8")
+                    frame = cv2.imdecode(frame, 1)
+                    frames_q.put(frame)
+                    begin = i+2 
 
 def stream_video():
-    cv2.namedWindow('nigga')   
+    cv2.namedWindow('window')   
     while True:
         if FPS > 0:
             displayTime = 1/FPS
-        if(frames_q.qsize()):
-            startTime = 0
-            #fps,st,frames_to_count,cnt = (0,0,1,0)
-            while frames_q.qsize():
-                deltaTime = time.time() - (startTime if startTime else time.time())
-                print(deltaTime, displayTime-deltaTime)
-                time.sleep(displayTime-deltaTime if displayTime-deltaTime > 0 else 0)
-                
-                # if cnt == frames_to_count:
-                #     fps = (frames_to_count/(time.time()-st))
-                #     st=time.time()
-                #     cnt=0
-                #     if fps>FPS:
-                #         displayTime+=0.0015
-                #     elif fps<FPS:
-                #         displayTime-=0.0015
-                #     else:
-                #         pass
-                # cnt += 1
-          
-                cv2.imshow("nigga",frames_q.get())
-                startTime = time.time()
-                if cv2.waitKey(1) & 0xff == ord('q'):
-                        break
-                
-                
+            
+        startTime = time.time()
+        #fps,st,frames_to_count,cnt = (0,0,1,0)
+        frameStart = 0
+        frameCounter = 0
+        while frames_q.qsize():
+            frameCounter += 1
+            frameTime = (time.time() - frameStart) if frameStart else displayTime
+            frameStart = time.time()
+            
+            #displayTime1 = displayTime - deltaTime
+
+        
+            cv2.imshow("window",frames_q.get())
+            # loopTime = (time.time() - startTime) if (startTime > 0) else 0
+            # print(loopTime, FPS)
+            # 
+            videoTime = (time.time() - startTime)
+            if cv2.waitKey(1) & 0xff == ord('q'):
+                    break
+            
+            
+            time.sleep(((frameCounter * displayTime) - videoTime) if videoTime < (frameCounter * displayTime) else 0)                
                 
 def receiveBlockPart(client_socket, length):
         blockFrames = bytearray()
         while len(blockFrames)+DATA_SIZE < length:
-            # data = client_socket.recv(DATA_SIZE) TODO: fix size
             data = client_socket.recv(DATA_SIZE)
             if not data:
                 break
-            # print("TU")
             blockFrames.extend(data)
             
         data = client_socket.recv(length - len(blockFrames))
@@ -139,6 +135,7 @@ video_parse_thread.start()
 video_thread.start()
 audio_thread.start()
 
+blockCount = 0
 while not isLast:
     args = client_socket.recv(9)
     args = struct.unpack(">?II", args)
@@ -155,5 +152,8 @@ while not isLast:
     #print("AUDIO: isLast, audioLength from server: ", isLast, lengthAudio)
     audio_q.put(receiveBlockPart(client_socket, lengthAudio))
     #print("AudioFrames: ", len(audioFrames))
+    
+    blockCount += 1
+    
     
 terminate = True

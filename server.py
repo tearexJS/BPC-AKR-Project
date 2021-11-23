@@ -19,7 +19,7 @@ HOST = "localhost"
 PORT = 65000
 DATA_SIZE = 1024
 FILE_PATH = "files/"
-BLOCK_SIZE = 20
+BLOCK_SIZE = 10
 
 
 @dataclass
@@ -47,7 +47,7 @@ def createBlock(video_q, audio_q):
     while video_q.qsize() and audio_q.qsize():
         
         for i in range(BLOCK_SIZE):
-            if i > video_q.qsize():
+            if video_q.qsize() == 0:
                 break
             video_list.extend(video_q.get())
         block = Block(bytes(video_list), audio_q.get())
@@ -63,7 +63,6 @@ def video_stream_gen(vid):
             break
         _,frame = cv2.imencode('.jpeg',frame,[cv2.IMWRITE_JPEG_QUALITY,80])
         video.put(bytes(frame))
-    print('Player closed')
     vid.release()
     return video
 
@@ -124,10 +123,11 @@ with conn:
         elif data["type"] == "fileReq":
             if(int(data["fileID"]) == 0):
                 filename = FILE_PATH+files[0]
-                video = cv2.VideoCapture("files/meme3.mp4")
-                extract_sound("files/meme3.mp4")
+                video = cv2.VideoCapture("files/7.mp4")
+                extract_sound("files/7.mp4")
                 FPS = int(video.get(cv2.CAP_PROP_FPS))
                 frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+                
                 video_q = video_stream_gen(video)
                 audio_q = audio_stream(frame_count)
                 createBlock(video_q, audio_q)
@@ -135,12 +135,9 @@ with conn:
                 audio_packet: bytes
                 while block_q.qsize():
                     if block_q.qsize() == 1:
-                        print("TERMINATOOOOOR")
                         video_packet, audio_packet = generatePacket(FPS, True)
                     else:
                         video_packet, audio_packet = generatePacket(FPS, False)
+
                     conn.send(video_packet)
-                    print("TAM")
                     conn.send(audio_packet)
-                    print("TU")
-                    print(len(audio_packet), len(video_packet))

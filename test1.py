@@ -40,7 +40,6 @@ def main():
                 if data == "request":
                     s.sendall(bytes(filesDict))
                 data = conn.recv(1024)
-#oiahfshfushiuefhiajhfeiushfe
                 
                     
                 

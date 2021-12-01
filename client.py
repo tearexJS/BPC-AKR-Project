@@ -1,19 +1,15 @@
 
 import queue
 import cv2
-import imutils
 import socket
 import numpy as np
 import time
 import os
-import sys
-import base64
 import json
 import threading
 import pyaudio
-import pickle
 import struct
-import pgi
+
 
 
 
@@ -71,19 +67,19 @@ def stream_video():
         frameCounter = 0
         while frames_q.qsize():
             frameCounter += 1
-            frameTime = (time.time() - frameStart) if frameStart else displayTime
-            frameStart = time.time()
-            
+            # frameTime = (time.time() - frameStart) if frameStart else displayTime
+            # frameStart = time.time()
             #displayTime1 = displayTime - deltaTime
 
-        
+            
             cv2.imshow("window",frames_q.get())
             # loopTime = (time.time() - startTime) if (startTime > 0) else 0
             # print(loopTime, FPS)
             # 
-            videoTime = (time.time() - startTime)
+            
             if cv2.waitKey(1) & 0xff == ord('q'):
                     break
+            videoTime = (time.time() - startTime)
             
             
             time.sleep(((frameCounter * displayTime) - videoTime) if videoTime < (frameCounter * displayTime) else 0)                

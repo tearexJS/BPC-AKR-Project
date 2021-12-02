@@ -1,7 +1,14 @@
 import cv2
+import ssl
 import socket
+import time
+import base64
+import threading
 import wave
+import pyaudio
+import pickle
 import struct
+import sys
 import queue
 import os
 import struct
@@ -81,6 +88,16 @@ print(type(server_socket))
 server_socket.bind((HOST, PORT))
 server_socket.listen()
 
+server_cert = 'files/server.crt'
+server_key = 'files/server.key'
+client_certs = 'files/client.crt'
+
+context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+context.verify_mode = ssl.CERT_REQUIRED
+context.load_cert_chain(certfile=server_cert, keyfile=server_key)
+context.load_verify_locations(cafile=client_certs)
+
+
 # video = cv2.VideoCapture("files/meme.mp4")
 # extract_sound("files/meme.mp4")
 # FPS = int(video.get(cv2.CAP_PROP_FPS))
@@ -104,6 +121,7 @@ server_socket.listen()
 #         Image.show()
 
 conn, addr = server_socket.accept()
+conn = context.wrap_socket(conn, server_side=True)
 with conn:
     print("Connected by", addr)
     while True:
@@ -134,3 +152,5 @@ with conn:
 
                     conn.send(video_packet)
                     conn.send(audio_packet)
+
+

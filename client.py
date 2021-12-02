@@ -1,4 +1,4 @@
-
+import ssl
 import queue
 import cv2
 import socket
@@ -96,10 +96,18 @@ def receiveBlockPart(client_socket, length):
         blockFrames.extend(data)
         
         return blockFrames
+    
+server_cert = 'files/server.crt'
+client_cert = 'files/client.crt'
+client_key = 'files/client.key'
+hostname = 'server'
+context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=server_cert)
+context.load_cert_chain(certfile=client_cert, keyfile=client_key)
 
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
+client_socket = context.wrap_socket(client_socket, server_side=False, server_hostname=hostname)
 client_socket.connect((HOST, PORT))
 
 jsonReq = {'type': 'fileListReq'}

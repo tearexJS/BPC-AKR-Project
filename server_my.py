@@ -106,11 +106,11 @@ with conn:
             filename = FILE_PATH + files[file_number]
             txt = files[file_number]
             x = txt.split(".", 1)
-            if x[1] == "mp3":
-                print()
+            #if x[1] == "mp3":
+             #   print(x)
                 ##TO DO##
 
-            elif x[1] == "mp4":
+            if x[1] == "mp4":
                 video = cv2.VideoCapture(filename)
                 extract_sound(filename)
                 FPS = int(video.get(cv2.CAP_PROP_FPS))
@@ -127,5 +127,5 @@ with conn:
                     else:
                         video_packet, audio_packet = generatePacket(FPS, False)
 
-                conn.send(video_packet)
-                conn.send(audio_packet)
+                    conn.send(video_packet)
+                    conn.send(audio_packet)

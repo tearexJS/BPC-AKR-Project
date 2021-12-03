@@ -11,7 +11,6 @@ import threading
 import pyaudio
 import struct
 from colored import fg, attr
-import trace
 
 DATA_SIZE = 1024
 HOST = '127.0.0.1'
@@ -73,7 +72,6 @@ def stream_video():
         frameCounter = 0
 
         while frames_q.qsize():
-            terminate = True
             frameCounter += 1
             cv2.imshow("Pro Player Advanced", frames_q.get())
 
@@ -82,10 +80,8 @@ def stream_video():
 
             videoTime = (time.time() - startTime)
             time.sleep(((frameCounter * displayTime) - videoTime) if videoTime < (frameCounter * displayTime) else 0)
-        #cv2.destroyAllWindows()
-        print(terminate)
-        if terminate:
-            sys.exit()
+        if FPS > 0:
+            cv2.destroyAllWindows()
 
 # Prijímanie audio/video blokov zo serveru
 def receiveBlockPart(client_socket, length):

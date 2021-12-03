@@ -1,14 +1,8 @@
 import cv2
 import ssl
 import socket
-import time
-import base64
-import threading
 import wave
-import pyaudio
-import pickle
 import struct
-import sys
 import queue
 import os
 import struct

@@ -16,13 +16,13 @@ DATA_SIZE = 1024
 HOST = '127.0.0.1'
 PORT = 65000
 
-audio_q = queue.Queue()
-video_q = queue.Queue()
-frames_q = queue.Queue()
+audio_q = queue.Queue() # queue with the payload from received audio block
+video_q = queue.Queue() # queue with the payload from received video block
+frames_q = queue.Queue() # queue with the extracted frames from the received video blocks
 terminate = False
 FPS = 0
 
-# Streamovanie audiočasti zvoleného súboru
+# streaming the audio from the received blocks
 def stream_audio():
     p = pyaudio.PyAudio()
     CHUNK = 1024
@@ -40,7 +40,7 @@ def stream_audio():
             p.terminate()
             sys.exit()
 
-# Získavanie snímkov z vyžiadaného videa
+# extracting the frames from the received blocks
 def getFrames():
     while True:
         if video_q.qsize():
@@ -48,7 +48,7 @@ def getFrames():
             frameSum = 0
             begin = 0
             for i in range(len(blockOfFrames)):
-                if blockOfFrames[i] == 0xFF and blockOfFrames[i + 1] == 0xD9:
+                if blockOfFrames[i] == 0xFF and blockOfFrames[i + 1] == 0xD9: # the frames in blocks are in JPEG format which is terminated with FFD9
                     end = (i + 2) if i < len(blockOfFrames) - 2 else len(blockOfFrames)
                     frame = blockOfFrames[begin: end]
                     frameSum += len(frame)
@@ -56,11 +56,10 @@ def getFrames():
                     frame = cv2.imdecode(frame, 1)
                     frames_q.put(frame)
                     begin = i + 2
-    #cv2.destroyAllWindows()
         if terminate:
             sys.exit()
 
-# Streamovanie videočasti zvoleného súboru
+# streaming the video from blocks
 def stream_video():
     cv2.namedWindow('Pro Player Advanced')
     while True:
@@ -79,11 +78,11 @@ def stream_video():
                 break
 
             videoTime = (time.time() - startTime)
-            time.sleep(((frameCounter * displayTime) - videoTime) if videoTime < (frameCounter * displayTime) else 0)
+            time.sleep(((frameCounter * displayTime) - videoTime) if videoTime < (frameCounter * displayTime) else 0) # time which ensures synchronisations at least on Linux
         if FPS > 0:
             cv2.destroyAllWindows()
 
-# Prijímanie audio/video blokov zo serveru
+# receiving the blocks from the server side
 def receiveBlockPart(client_socket, length):
     blockFrames = bytearray()
     while len(blockFrames) + DATA_SIZE < length:
@@ -118,7 +117,7 @@ if not data:
     os._exit(1)
 
 data = json.loads(data.decode("utf-8"))
-# Select file
+# select file
 for i, file in enumerate(data['files']):
     print(i, ": ", file)
 
@@ -128,17 +127,18 @@ while int(selectedFileId) > i:
         selectedFileId = input("Select file to stream\n")
 
 
-# Vyžiadanie súboru zo serveru
+# requesting the file from server
 client_socket.sendall(
     bytes(json.dumps({'type': 'fileReq', 'fileID': selectedFileId}), 'utf-8'))
 isLast = False
 
 video_thread = threading.Thread(
-    target=stream_video, args=())
+    target=stream_video, args=()) # thread to stream the video
 audio_thread = threading.Thread(
-    target=stream_audio, args=())
-video_parse_thread = threading.Thread(target=getFrames, args=())
+    target=stream_audio, args=()) # thread to stream the audio
+video_parse_thread = threading.Thread(target=getFrames, args=()) # thread to extract frames from the received video blocks
 
+# starting the threads
 video_parse_thread.start()
 video_thread.start()
 audio_thread.start()
